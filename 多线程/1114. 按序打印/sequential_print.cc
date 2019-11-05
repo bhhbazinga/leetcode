@@ -18,7 +18,7 @@ class Foo {
   }
 
   void second(std::function<void()> printSecond) {
-    std::unique_lock<std::mutex> lk(mutex);
+    std::unique_lock<std::mutex> lk(mutex_);
     cond_var1_.wait(lk, [this]() { return ready1_; });
     // printSecond() outputs "second". Do not change or remove this line.
     printSecond();
@@ -29,7 +29,7 @@ class Foo {
   }
 
   void third(std::function<void()> printThird) {
-    std::unique_lock<std::mutex> lk(mutex);
+    std::unique_lock<std::mutex> lk(mutex_);
     cond_var2_.wait(lk, [this]() { return ready2_; });
 
     // printThird() outputs "third". Do not change or remove this line.
@@ -37,7 +37,7 @@ class Foo {
   }
 
  private:
-  std::mutex mutex;
+  std::mutex mutex_;
   std::condition_variable cond_var1_;
   std::condition_variable cond_var2_;
   bool ready1_;
