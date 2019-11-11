@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -Wall -Wextra -pedantic -std=c++17 -g
+CXXFLAGS = -g -Wall -Wextra -pedantic -fsanitize=address -fno-omit-frame-pointer -fsanitize=leak
 LBLIBS = -pthread
 
 SRC = webcrawler.cc
@@ -9,7 +9,7 @@ EXEC = main
 all: $(EXEC)
 
 $(EXEC): $(OBJ)
-	$(CXX) -o $@ $(OBJ) $(LBLIBS)
+	$(CXX) $(CXXFLAGS) -o $@ $(OBJ) $(LBLIBS)
 
 clean:
 	rm -rf $(OBJ) $(EXEC)

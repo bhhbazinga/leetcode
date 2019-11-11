@@ -1,4 +1,7 @@
+#include <unistd.h>
+#include <atomic>
 #include <cassert>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
@@ -28,6 +31,7 @@ int edges[kURLNum][kURLNum];
 class HtmlParser {
  public:
   std::vector<std::string> getUrls(const std::string& url) {
+    sleep(rand() % 3);
     std::vector<std::string> res;
     for (int i = 0; i < kURLNum; ++i) {
       if (urls[i] != url) {
@@ -45,15 +49,19 @@ class HtmlParser {
   }
 };
 
-#define Log(...)                \
-  fprintf(stderr, __VA_ARGS__); \
+#define Log(...)                                              \
+  fprintf(stderr, "[thread-%d]", std::this_thread::get_id()); \
+  fprintf(stderr, __VA_ARGS__);                               \
   fprintf(stderr, "\n")
 
 template <typename T>
 class BlockingQueue {
  public:
   BlockingQueue() : head_(new Node), tail_(head_), size_(0) {}
-  ~BlockingQueue() {}
+  ~BlockingQueue() {
+    delete tail_;
+    // assert(false);
+  }
 
   void Push(const T& value) {
     std::lock_guard<std::mutex> lk(tail_mutex_);
@@ -74,8 +82,10 @@ class BlockingQueue {
       return false;
     }
 
-    value = std::move(head_->value);
-    head_ = head_->next;
+    Node* old_head = head_;
+    value = std::move(old_head->value);
+    head_ = old_head->next;
+    delete old_head;
     return true;
   }
 
@@ -84,8 +94,10 @@ class BlockingQueue {
     std::unique_lock<std::mutex> lk(head_mutex_);
     cond_var_.wait(lk, [this] { return head_ != GetTail(); });
 
-    T value = std::move(head_->value);
-    head_ = head_->next;
+    Node* old_head = head_;
+    T value = std::move(old_head->value);
+    head_ = old_head->next;
+    delete old_head;
     return value;
   }
 
@@ -153,14 +165,15 @@ class Work {
     return *this;
   }
 
-  void WaitFinish() { future_.wait(); }
-
  private:
   friend WorkQueue;
-  friend Work;
+  // friend Work;
 
   const std::function<void(void)>& GetFunction() const { return func_; }
-  void Finish() { promise_.set_value(); }
+  void Finish() {
+    // Log("Finish");
+    promise_.set_value();
+  }
 
   std::function<void(void)> func_;
   std::promise<void> promise_;
@@ -169,53 +182,94 @@ class Work {
 
 class WorkQueue {
  public:
-  WorkQueue(int thread_num)
-      : thread_num_(thread_num), start_(false), stop_(false) {
+  WorkQueue(int thread_num = std::thread::hardware_concurrency())
+      : thread_num_(thread_num),
+        start_(false),
+        stop_(false),
+        running_(new bool[thread_num_]) {
+    running_[0] = false;
+    running_[1] = false;
+
     InitThread();
   }
-  ~WorkQueue() {}
 
-  std::shared_ptr<Work> Schedule(std::function<void(void)>& func) {
+  ~WorkQueue() {
+    // assert(false);
+    delete[] running_;
+  }
+
+  void Schedule(std::function<void(void)>& func) {
     return Schedule(std::move(func));
   }
 
-  std::shared_ptr<Work> Schedule(std::function<void(void)>&& func) {
+  void Schedule(std::function<void(void)>&& func) {
     std::promise<void> promise;
-    std::shared_ptr<Work> pwork(new Work(func, promise));
-    queue_.Push(pwork);
+    Work* work = new Work(func, promise);
+    queue_.push(work);
     cond_.notify_one();
-    return pwork;
   }
 
   void Start() {
-    assert(start_ == false);
+    // assert(start_ == false);
     start_ = true;
-    cond_.notify_all();
   }
+
   void Stop() {
-    assert(start_ == true);
+    // assert(start_ == true);
     stop_ = true;
+    finish_cond_.notify_all();
     cond_.notify_all();
   }
 
+  void WaitFinish() {
+    std::unique_lock<std::mutex> lk(finish_mutex_);
+    finish_cond_.wait(lk);
+  }
+
  private:
+  bool TryFinish() {
+    if (stop_) {
+      return true;
+    }
+
+    for (int i = 0; i < thread_num_; ++i) {
+      // Log("%d", running_[i]);
+      if (running_[i]) {
+        return false;
+      }
+    }
+    // Log("TryFinish>>>>>");
+    Stop();
+    return true;
+  }
+
   void InitThread() {
     for (int i = 0; i < thread_num_; ++i) {
-      std::thread t([this] {
+      std::thread t([i, this] {
         while (true) {
+          // Log("11111111");
+
           std::unique_lock<std::mutex> lk(mutex_);
-          cond_.wait(lk,
-                     [this] { return (start_ && !queue_.Empty()) || stop_; });
+          cond_.wait(lk, [this] { return (!queue_.empty()) || stop_; });
+
           if (stop_) {
             return;
           }
 
-          std::shared_ptr<Work> pwork = queue_.Pop();
+          Work* work = queue_.front();
+          queue_.pop();
           lk.unlock();
 
-          auto func = pwork->GetFunction();
+          auto func = work->GetFunction();
+          running_[i] = true;
           func();
-          pwork->Finish();
+          delete work;
+          running_[i] = false;
+
+          lk.lock();
+          if (queue_.empty()) {
+            TryFinish();
+          }
         }
       });
       t.detach();
@@ -225,26 +279,34 @@ class WorkQueue {
   int thread_num_;
   bool start_;
   bool stop_;
+  bool* running_;
   std::mutex mutex_;
+  std::mutex finish_mutex_;
   std::condition_variable cond_;
-  BlockingQueue<std::shared_ptr<Work>> queue_;
+  std::condition_variable finish_cond_;
+  std::queue<Work*> queue_;
 };
 
 class Solution {
  public:
-  Solution() : work_queue_(8) {}
-  ~Solution() {}
+  Solution() : work_queue_(std::thread::hardware_concurrency()) {}
+  ~Solution() {
+    // assert(false);
+  }
   std::vector<std::string> crawl(std::string start_url,
                                  HtmlParser html_parser) {
+    std::vector<std::string> res;
+    if (start_url == "") {
+      return res;
+    }
+
     std::string host_name = GetHostName(start_url);
 
     work_queue_.Start();
-    std::shared_ptr<Work> pwork = work_queue_.Schedule(
-        [&, this] { DoCrawl(host_name, start_url, html_parser); });
-    pwork->WaitFinish();
+    work_queue_.Schedule(
+        [&, start_url, this] { DoCrawl(host_name, start_url, html_parser); });
+    work_queue_.WaitFinish();
     work_queue_.Stop();
-
-    std::vector<std::string> res;
     for (const std::string& url : url_set_) {
       res.push_back(url);
     }
@@ -260,27 +322,22 @@ class Solution {
 
   void DoCrawl(const std::string& host_name, const std::string& url,
                HtmlParser& html_parser) {
-    if (ExistURL(url)) {
-      return;
-    }
-
     if (GetHostName(url) != host_name) {
       return;
     }
 
     // Log("Insert >>>>>>>>>>>>>>>%s", url.c_str());
-    InsertURL(url);
-
-    std::vector<std::string> urls = html_parser.getUrls(url);
-    std::vector<std::shared_ptr<Work>> pworks;
-    for (const std::string& sub_url : urls) {
-      std::shared_ptr<Work> pwork = work_queue_.Schedule(
-          [&, this] { DoCrawl(host_name, sub_url, html_parser); });
-      pworks.push_back(pwork);
+    bool success = TryInsertURL(url);
+    if (!success) {
+      return;
     }
 
-    for (auto pwork : pworks) {
-      pwork->WaitFinish();
+    std::vector<std::string> urls = html_parser.getUrls(url);
+    for (const std::string& sub_url : urls) {
+      work_queue_.Schedule([&, sub_url, this] {
+        // Log("sub_url=%s", sub_url.c_str());
+        DoCrawl(host_name, sub_url, html_parser);
+      });
     }
   }
 
@@ -292,14 +349,15 @@ class Solution {
     }
   }
 
-  void InsertURL(const std::string& url) {
+  bool TryInsertURL(const std::string& url) {
     std::lock_guard<std::mutex> lk(url_set_mutex_);
+    if (url_set_.find(url) != url_set_.end()) {
+      return false;
+    }
     url_set_.insert(url);
-  }
-
-  bool ExistURL(const std::string& url) {
-    std::lock_guard<std::mutex> lk(url_set_mutex_);
-    return url_set_.find(url) != url_set_.end();
+    // std::cout << "insert->>>>>>>>>>>>>" << std::this_thread::get_id() << url
+    //           << std::endl;
+    return true;
   }
 
   WorkQueue work_queue_;
@@ -309,11 +367,14 @@ class Solution {
 
 int main(int argc, char const* argv[]) {
   memset(edges, -1, sizeof(edges));
+  edges[1][2] = 1;
   edges[2][0] = 1;
+  edges[0][2] = 1;
   edges[2][1] = 1;
   edges[3][2] = 1;
   edges[3][1] = 1;
   edges[0][4] = 1;
+  edges[4][0] = 1;
 
   Solution s;
   HtmlParser parser;
