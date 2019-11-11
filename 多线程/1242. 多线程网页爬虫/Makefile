@@ -2,6 +2,7 @@ CXX = g++
 CXXFLAGS = -g -Wall -Wextra -pedantic -fsanitize=address -fno-omit-frame-pointer -fsanitize=leak
 LBLIBS = -pthread
 
+
 SRC = webcrawler.cc
 OBJ = $(SRC:.cc=.o)
 EXEC = main
