@@ -164,40 +164,44 @@ class Solution {
                                  HtmlParser html_parser) {
     BlockingQueue<std::string> request_queue;
     std::string host_name = GetHostName(start_url);
-    request_queue.Push(start_url);
+    request_queue.Push(std::move(start_url));
 
     int len = std::thread::hardware_concurrency();
     std::thread* threads[len];
-    bool running[len];
-    memset(running, 0, sizeof(running));
+    int running_mask = 0;
+
+    std::mutex mutex;
+    std::condition_variable cond;
 
     for (int i = 0; i < len; ++i) {
       std::thread* t = new std::thread([&, i, this] {
         while (true) {
-          std::shared_ptr<std::string> purl = request_queue.PopFor(1);
-          if (purl == nullptr) {
-            bool finish = true;
-            for (int j = 0; j < len; ++j) {
-              if (running[j]) {
-                finish = false;
-                break;
-              }
-            }
-            if (finish) {
-              return;
-            } else {
-              continue;
+          std::unique_lock<std::mutex> lk(mutex);
+          cond.wait(
+              lk, [&] { return !request_queue.Empty() || running_mask == 0; });
+
+          if (running_mask == 0 && request_queue.Empty()) {
+            return;
+          }
+
+          std::string url = request_queue.Pop();
+          running_mask |= (1 << i);
+          lk.unlock();
+
+          if (GetHostName(url) == host_name && TryInsertURL(url)) {
+            std::vector<std::string> urls = html_parser.getUrls(url);
+            for (std::string& sub_url : urls) {
+              request_queue.Push(std::move(sub_url));
+              cond.notify_one();
             }
           }
 
-          running[i] = true;
-          if (GetHostName(*purl) == host_name && TryInsertURL(*purl)) {
-            std::vector<std::string> urls = html_parser.getUrls(*purl);
-            for (std::string& sub_url : urls) {
-              request_queue.Push(sub_url);
-            }
+          lk.lock();
+          running_mask &= !(1 << i);
+          if (running_mask == 0 && request_queue.Empty()) {
+            cond.notify_all();
           }
-          running[i] = false;
+          lk.unlock();
         }
       });
       threads[i] = t;
