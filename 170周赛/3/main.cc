@@ -64,8 +64,7 @@ class Solution {
       int level;
     };
 
-    bool vis[kMax];
-    memset(&vis[0], 0, sizeof(vis[0]) * kMax);
+    vector<bool> vis(watchedVideos.size(), false);
     vis[id] = true;
 
     queue<Node> q;
@@ -93,9 +92,6 @@ class Solution {
       q.pop();
     }
   }
-
- private:
-  enum { kMax = 101 };
 };
 
 int main(int argc, char const* argv[]) {
