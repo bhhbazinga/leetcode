@@ -4,18 +4,18 @@
 class Solution {
  public:
   std::vector<std::vector<int>> merge(
-      std::vector<std::vector<int>>& intervals) {
-    std::sort(intervals.begin(), intervals.end(),
+      std::vector<std::vector<int>>& deltas) {
+    std::sort(deltas.begin(), deltas.end(),
               [](const std::vector<int>& a, const std::vector<int>& b) {
                 return a[0] < b[0];
               });
 
     std::vector<std::vector<int>> res;
-    for (int i = 0; i < intervals.size(); ++i) {
-      std::vector<int> cur = intervals[i];
-      for (int j = i + 1; j < intervals.size(); ++j) {
-        if (Intersect(cur, intervals[j])) {
-          cur[1] = std::max(cur[1], intervals[j][1]);
+    for (int i = 0; i < deltas.size(); ++i) {
+      std::vector<int> cur = deltas[i];
+      for (int j = i + 1; j < deltas.size(); ++j) {
+        if (Intersect(cur, deltas[j])) {
+          cur[1] = std::max(cur[1], deltas[j][1]);
           ++i;
         } else {
 					break;
