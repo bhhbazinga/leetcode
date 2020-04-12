@@ -24,24 +24,26 @@
 using namespace std;
 
 class Solution {
+  string match[6] = {"&quot;", "&apos;", "&amp;", "&gt;", "&lt;", "&frasl;"};
+  string rep[6] = {"\"", "\'", "&", ">", "<", "/"};
+
  public:
-  string stoneGameIII(vector<int>& stoneValue) {
-    int n = stoneValue.size();
-    vector<int> dp(n + 3, 0);
-    int sum = 0;
-    for (int i = n - 1; i >= 0; --i) {
-      sum += stoneValue[i];
-      dp[i] = sum - min({dp[i + 1], dp[i + 2], dp[i + 3]});
+  string entityParser(string text) {
+    for (int i = 0; i < 6; ++i) {
+      int index = 0;
+      index = text.find(match[i]);
+      while (index != -1) {
+        text.replace(index, match[i].size(), rep[i]);
+        index = text.find(match[i], index);
+      }
     }
-    if (dp[0] > sum - dp[0]) return "Alice";
-    if (dp[0] < sum - dp[0]) return "Bob";
-    return "Tie";
+    // log("%s\n", text.data());
+    return text;
   }
 };
 
 int main(int argc, char const* argv[]) {
   Solution s;
-  vector<int> stoneValue = {1, 2, 3, 7};
-  s.stoneGameIII(stoneValue);
+  s.entityParser("and I quote: &quot;...&quot;");
   return 0;
 }

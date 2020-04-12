@@ -25,23 +25,31 @@ using namespace std;
 
 class Solution {
  public:
-  string stoneGameIII(vector<int>& stoneValue) {
-    int n = stoneValue.size();
-    vector<int> dp(n + 3, 0);
-    int sum = 0;
-    for (int i = n - 1; i >= 0; --i) {
-      sum += stoneValue[i];
-      dp[i] = sum - min({dp[i + 1], dp[i + 2], dp[i + 3]});
+  vector<int> processQueries(vector<int>& queries, int m) {
+    vector<int> P(m + 1);
+    for (int i = 1; i <= m; ++i) {
+      P[i] = i;
     }
-    if (dp[0] > sum - dp[0]) return "Alice";
-    if (dp[0] < sum - dp[0]) return "Bob";
-    return "Tie";
+    vector<int> res;
+    for (int i = 0; i < queries.size(); ++i) {
+      int q = queries[i];
+      for (int j = 1; j <= m; ++j) {
+        if (q == P[j]) {
+          res.push_back(j - 1);
+          P.erase(P.begin()  + j);
+          P.insert(P.begin() + 1, q);
+          // log("%d\n", j - 1);
+          break;
+        }
+      }
+    }
+    return res;
   }
 };
 
 int main(int argc, char const* argv[]) {
   Solution s;
-  vector<int> stoneValue = {1, 2, 3, 7};
-  s.stoneGameIII(stoneValue);
+  vector<int> queries = {4,1,2,2};
+  s.processQueries(queries, 4);
   return 0;
 }

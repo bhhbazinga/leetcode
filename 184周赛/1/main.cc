@@ -22,26 +22,30 @@
   } while (0)
 
 using namespace std;
-
 class Solution {
  public:
-  string stoneGameIII(vector<int>& stoneValue) {
-    int n = stoneValue.size();
-    vector<int> dp(n + 3, 0);
-    int sum = 0;
-    for (int i = n - 1; i >= 0; --i) {
-      sum += stoneValue[i];
-      dp[i] = sum - min({dp[i + 1], dp[i + 2], dp[i + 3]});
+  vector<string> stringMatching(vector<string> words) {
+    vector<string> res;
+    set<string> res_set;
+
+    for (int i = 0; i < words.size(); ++i) {
+      for (int j = 0; j < words.size(); ++j) {
+        if (i != j && words[j].find(words[i]) != -1) {
+          res_set.insert(words[i]);
+          // log("%s\n", words[i].data());
+        }
+      }
     }
-    if (dp[0] > sum - dp[0]) return "Alice";
-    if (dp[0] < sum - dp[0]) return "Bob";
-    return "Tie";
+
+    for (auto it = res_set.begin(); it != res_set.end(); ++it) {
+      res.push_back(*it);
+    }
+    return res;
   }
 };
 
 int main(int argc, char const* argv[]) {
   Solution s;
-  vector<int> stoneValue = {1, 2, 3, 7};
-  s.stoneGameIII(stoneValue);
+  s.stringMatching({"leetcoder","leetcode","od","hamlet","am"});
   return 0;
 }
